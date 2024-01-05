@@ -6,6 +6,8 @@ import seaborn as sns
 
 from latinhypercubesampling import latin_hypercube_sampling, random_sampling
 
+#test comment 
+
 # Set random seed for reproducibility
 np.random.seed(42)
 
