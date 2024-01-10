@@ -2,7 +2,7 @@
 
 In this file you get a step-by-step instruction on how to install everything you need for the course *Optimizing Experimental Design* from scratch.
 
-If you have something already installed you can skip this step.
+If you have something already installed you can skip the respective step.
 
 ### Step 1: Install Python
 
