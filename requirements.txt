@@ -1,3 +1,4 @@
+jupyter==1.0.0
 matplotlib==3.8.0
 modAL==0.56.4504
 modAL_python==0.4.2
