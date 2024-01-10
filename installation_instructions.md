@@ -70,7 +70,7 @@ python -m ipykernel install --user --name=oed
 ```bash
 jupyter notebook
 ```
-- In the *Jupyter* Notebook interface, create a new notebook and select your newly created kernel `oed` from the *Kernel* menu.
+- In the *Jupyter* Notebook interface, create a new notebook or open one of the available ones from `tutorials` and select your newly created kernel `oed` from the *Kernel* menu.
 
 
 ## Restarting the environment and Jupyter
