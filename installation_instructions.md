@@ -57,9 +57,13 @@ pip install ipykernel
 pip install -r requirements.txt
 ```
 We also need Pytorch for using the Pyro-Library. 
-But since Pytorch is a huge package and we do not need any GPU support for the Pyro tutorial, we will install only its CPU-Version which safes a lot disk space
+But since Pytorch is a huge package and we do not need any GPU support for the Pyro tutorial, we will install only its CPU-Version which safes a lot disk space:
 ```bash
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+```
+Additionally to Pytorch, we also need Pyro for the last part of the course. Install if after you installed Pytorch with
+```bash
+pip install pyro-ppl
 ```
 
 ### Step 6: Create a Jupyter Kernel
