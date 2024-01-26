@@ -1,6 +1,8 @@
 from typing import Callable, Iterable, Union
 import numpy as np
 import matplotlib.pyplot as plt
+import hssm
+
 
 class experimental_unit:
     
@@ -75,7 +77,7 @@ def linear_ground_truth(x: float, y: float=None, parameter: Union[list[float], f
         assert parameter is not None and len(parameter) == 1, 'parameters must be a list of length 1'
         return parameter[0] * x
     
-def sigmoid_ground_truth(x: float, parameter: float=None, mirrored: bool=True) -> float:
+def sigmoid_ground_truth(x: float, parameter: Union[float, list[float]]=None) -> float:
     """
     This function returns the dependent variable based on the independent variables x and y and the parameters
     
@@ -88,67 +90,51 @@ def sigmoid_ground_truth(x: float, parameter: float=None, mirrored: bool=True) -
         response (float): the response of the sigmoid function 
     """
     if parameter is None:
-        parameter = 0
+        parameter = (5, 1)
         
-    assert isinstance(parameter, (float, int)), 'parameter must be a float or an int'
-    response = 1 / (1 + np.exp(-x + parameter))
-    if mirrored:
-        return 1 - response
+    return 1 / (1 + np.exp(parameter[1]*(-x + parameter[0])))
+    
+def binomial_ground_truth(x: float, parameter: list[float]=None, response_time=False) -> float:
+    """
+    This function returns 1 or 0 based on the independent variable x and the parameters given to a sigmoidal function.
+    
+    Args:
+        x (float): the independent variable
+        parameter (list): the parameters for the sigmoidal function (0: bias, 1: sensitivity); Parameter must be a list of length 2
+    
+    Returns:
+        response (float): the response of the working memory function 
+    """
+    if parameter is None:
+        parameter = (0, 1)
+    
+    prob_wrong = sigmoid_ground_truth(x, parameter)
+    response = np.random.choice((0, 1), p=np.array((prob_wrong, 1-prob_wrong)).reshape(-1,))
+    
+    if response_time:
+        rt = np.random.lognormal(np.max((1, x-parameter[0])), 0.5)
+        return response, rt
     else:
         return response
-    
-    
-class DriftDiffusionModel:
-    def __init__(self, drift_rate, starting_point, threshold, noise_std, time_step=0.01):
-        self.drift_rate = drift_rate
-        self.starting_point = starting_point
-        self.threshold = threshold
-        self.noise_std = noise_std
-        self.time_step = time_step
-
-    def run_simulation(self, collect_trace=False):
-        evidence = self.starting_point
-        time = 0
-        evidence_trace = []
-
-        while abs(evidence) < self.threshold:
-            evidence += self.drift_rate * self.time_step + np.random.normal(0, self.noise_std) * np.sqrt(self.time_step)
-            time += self.time_step
-            if collect_trace:
-                evidence_trace.append(evidence)
-
-        return np.sign(evidence), time, evidence_trace if collect_trace else None
-
-    def plot_evidence_trace(self, num_simulations=10):
-        traces = []
-
-        for _ in range(num_simulations):
-            traces.append(self.run_simulation(collect_trace=True)[2])
-            
-        for trace in traces:
-            plt.plot(np.arange(0, len(trace) * self.time_step, self.time_step), trace)
-        plt.xlabel('Time')
-        plt.ylabel('Evidence')
-        plt.title('Evidence Trace')
-        plt.axhline(y=self.threshold, color='r', linestyle='-')
-        plt.axhline(y=-self.threshold, color='r', linestyle='-')
-        plt.show()
-
-    def plot_response_time_distribution(self, num_simulations=1000, bins=1001):
-        response_times = []
-        decisions = []
-
-        for _ in range(num_simulations):
-            decision, decision_time, _ = self.run_simulation()
-            response_times.append(decision_time * decision)
-            decisions.append(decision)
-
-        plt.hist(response_times, bins=bins, color='blue', alpha=0.7)
-        plt.xlabel('Response Time')
-        plt.ylabel('Frequency')
-        plt.title('Response Time Distribution')
-        plt.show()
         
-class MysteryDDM(DriftDiffusionModel):
-    def __init__(self):
-        super().__init__(drift_rate=0.1, starting_point=0, threshold=1, noise_std=0.5)
+def multimodal_ground_truth(x: float, y:float, parameter: list[float, float, float, float, float]=None) -> float:
+    """
+    This function returns the dependent variable based on the independent variables x and y and the parameters
+    
+    Args:
+        x (float): the first independent variable
+        y (float): the second independent variable
+        parameter (list): the parameters for each independent variable; Parameter must be a list of length 4
+    
+    Returns:
+        response (float): the response of the multimodal function 
+    """
+    if parameter is None:
+        parameter = [3, 1, 1, 2]
+        
+    assert isinstance(parameter, list) and len(parameter) == 4, 'parameters must be a list of length 4'
+    wave = parameter[0]*np.sin(parameter[0] * x) + np.cos(parameter[1] * y)
+    parabola = parameter[2]*x**2 + parameter[3]*y**2
+    return wave + parabola
+    raise NotImplementedError
+    # return hssm.HSSM()
