@@ -1,7 +1,6 @@
 from typing import Callable, Iterable, Union
 import numpy as np
 import matplotlib.pyplot as plt
-import hssm
 
 
 class experimental_unit:
@@ -136,5 +135,3 @@ def multimodal_ground_truth(x: float, y:float, parameter: list[float, float, flo
     wave = parameter[0]*np.sin(parameter[0] * x) + np.cos(parameter[1] * y)
     parabola = parameter[2]*x**2 + parameter[3]*y**2
     return wave + parabola
-    raise NotImplementedError
-    # return hssm.HSSM()
