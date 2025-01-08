@@ -1,4 +1,5 @@
 from typing import Callable, Iterable, Union
+from numbers import Number
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -17,12 +18,9 @@ class experimental_unit:
         self.parameters = parameters
         self.noise_level = noise_level
         
-    def problem_solver(self, x, y=None):
+    def problem_solver(self, conditions):
         # this method returns the dependent variable based on the independent variables x and y and the parameters
-        if y is None:
-            return self.problem_solver_fun(x, self.parameters)
-        else:
-            return self.problem_solver_fun(x, y, self.parameters)
+        return self.problem_solver_fun(conditions, self.parameters)
     
     def noise(self, noise_level=None):
         # this method returns the noise
@@ -31,11 +29,51 @@ class experimental_unit:
             
         return self.noise_fun(noise_level)
     
-    def step(self, x, y=None):
+    def step(self, conditions, noise=True):
         # this method returns the observation which is the sum of the dependent variable and the noise
-        return self.problem_solver(x, y) + self.noise()
+        if noise:
+            obs =  self.problem_solver(conditions) + self.noise()
+        else:
+            obs = self.problem_solver(conditions)
+        
+        # make obs an array if obs is a scalar
+        if not isinstance(obs, Iterable):
+            obs = np.array(obs)
+            
+        if len(obs.shape) == 0:
+            obs = obs.reshape(-1)
+            
+        return np.max(np.stack((np.zeros_like(obs), obs), axis=1), axis=1)
+
+
+def generate_dataset(experimental_units: Iterable[experimental_unit], conditions: Iterable[Iterable[Number]], n_repetitions: int, shuffle: bool = False):
+    # check that each element of conditions has only two numeric sub-elements
+    assert any([[isinstance(e, Number) for e in c] for c in conditions]), 'Some elements in the conditions argument appear to be not of length 2 or are non-numeric'
     
+    n_experimental_units = len(experimental_units)
+    n_conditions = len(conditions)
     
+    # create an array which will be the dataset
+    dataset = np.zeros((n_experimental_units, n_conditions, n_repetitions, 2+conditions.shape[-1]))
+
+    for i in range(n_experimental_units):
+        # here we collect the observations for each experimental unit
+        for k in range(n_repetitions):
+                # here we collect the observations for each repetition for each condition for each experimental unit
+                # dataset[i, :, k] = experimental_units[i].step(conditions[:, 0], conditions[:, 1])
+                observation = experimental_units[i].step(conditions)
+                dataset[i, :, k, 0] += i
+                dataset[i, :, k, 1:1+conditions.shape[-1]] = conditions
+                dataset[i, :, k, -1] = observation
+    
+    if shuffle:
+        np.random.shuffle(dataset)
+    
+    dataset_flat = dataset.reshape(-1, dataset.shape[-1])
+    
+    return dataset, dataset_flat
+
+
 def noise(noise_level: float) -> float:
     """
     This function returns a random number drawn from a normal distribution with mean 0 and standard deviation noise_level
@@ -48,7 +86,8 @@ def noise(noise_level: float) -> float:
     """
     return np.random.normal(0, noise_level)
 
-def linear_ground_truth(x: float, y: float=None, parameter: Union[list[float], float]=None) -> float:
+
+def linear_ground_truth(conditions, parameters: Union[list[float], float]=None) -> float:
     """
     This function returns the dependent variable based on the independent variables x and y and the parameters
     
@@ -61,22 +100,22 @@ def linear_ground_truth(x: float, y: float=None, parameter: Union[list[float], f
         response (float): the response of the linear function
     """
     
-    if parameter is not None and isinstance(parameter, (float, int)):
-        parameter = [parameter]
-            
-    if y is not None:
-        if parameter is None:
-            parameter = [1, 1]
+    if isinstance(conditions, Iterable):
+        assert len(conditions)<=2, "conditions must be an iterable of maximum length 2."
+        if len(conditions) == 1:
+            x = conditions[0]
+        elif len(conditions) == 2:
+            x, y = conditions[0], conditions[1]
         
-        assert parameter is not None and len(parameter) == 2, 'parameters must be a list of length 2'
-        return parameter[0] * x + parameter[1] * y
+        assert len(parameters)==len(conditions), "parameters must be an iterable of length 2."
+        
     else:
-        if parameter is None:
-            parameter = [1]
-        assert parameter is not None and len(parameter) == 1, 'parameters must be a list of length 1'
-        return parameter[0] * x
+        x, y = conditions, 0
+        
+    return parameters[0] * x + parameters[1] * y
+
     
-def sigmoid_ground_truth(x: float, parameter: Union[float, list[float]]=None) -> float:
+def sigmoid_ground_truth(conditions, parameters: Union[float, list[float]]) -> float:
     """
     This function returns the dependent variable based on the independent variables x and y and the parameters
     
@@ -88,12 +127,22 @@ def sigmoid_ground_truth(x: float, parameter: Union[float, list[float]]=None) ->
     Returns:
         response (float): the response of the sigmoid function 
     """
-    if parameter is None:
-        parameter = (5, 1)
-        
-    return 1 / (1 + np.exp(parameter[1]*(-x + parameter[0])))
     
-def binomial_ground_truth(x: float, parameter: list[float]=None, response_time=False) -> float:
+    if isinstance(conditions, Iterable):
+        if len(conditions.shape) == 1:
+            assert len(conditions)==1, "conditions must be an iterable of length 1."
+            x = conditions[0]
+        elif len(conditions.shape) == 2:
+            assert conditions.shape[-1]==1, "conditions must be an iterable of shape (n, 1)."
+            x = conditions[:, 0]
+    else:
+        x = conditions
+    assert len(parameters)==2, "parameters must be an iterable of length 2."
+    
+    return 1 / (1 + np.exp(parameters[1]*(-x + parameters[0])))
+
+    
+def binomial_ground_truth(conditions, parameters: list[float], response_time=False) -> float:
     """
     This function returns 1 or 0 based on the independent variable x and the parameters given to a sigmoidal function.
     
@@ -104,19 +153,24 @@ def binomial_ground_truth(x: float, parameter: list[float]=None, response_time=F
     Returns:
         response (float): the response of the working memory function 
     """
-    if parameter is None:
-        parameter = (0, 1)
+    if isinstance(conditions, Iterable):
+        assert len(conditions)==1, "conditions must be an iterable of length 1."
+        x = conditions[0]
+    else:
+        x = conditions
+    assert len(parameters)==2, "parameters must be an iterable of length 2."
     
-    prob_wrong = sigmoid_ground_truth(x, parameter)
+    prob_wrong = sigmoid_ground_truth(x, parameters)
     response = np.random.choice((0, 1), p=np.array((prob_wrong, 1-prob_wrong)).reshape(-1,))
     
     if response_time:
-        rt = np.random.lognormal(np.max((1, x-parameter[0])), 0.5)
+        rt = np.random.lognormal(np.max((1, x-parameters[0])), 0.5)
         return response, rt
     else:
         return response
+
         
-def multimodal_ground_truth(x: float, y:float, parameter: list[float, float, float, float, float]=None) -> float:
+def wave_ground_truth(conditions, parameters: list[float, float, float, float, float]) -> float:
     """
     This function returns the dependent variable based on the independent variables x and y and the parameters
     
@@ -128,10 +182,38 @@ def multimodal_ground_truth(x: float, y:float, parameter: list[float, float, flo
     Returns:
         response (float): the response of the multimodal function 
     """
-    if parameter is None:
-        parameter = [3, 1, 1, 2]
+    
+    assert len(conditions)==2, "conditions must be an iterable of length 2."
+    assert len(parameters)==4, "parameters must be an iterable of length 4."
+    
+    x, y = conditions[0], conditions[1]
         
-    assert isinstance(parameter, list) and len(parameter) == 4, 'parameters must be a list of length 4'
-    wave = parameter[0]*np.sin(parameter[0] * x) + np.cos(parameter[1] * y)
-    parabola = parameter[2]*x**2 + parameter[3]*y**2
+    assert isinstance(parameters, list) and len(parameters) == 4, 'parameters must be a list of length 4'
+    wave = parameters[0]*np.sin(parameters[0] * x) + np.cos(parameters[1] * y)
+    parabola = parameters[2]*x**2 + parameters[3]*y**2
     return wave + parabola
+
+
+def normal_ground_truth(conditions, parameters=np.ones(2,)):
+    """This ground truth takes in two factors and a set of parameters and returns a response
+
+    Args:
+        x (float): The level of the first factor
+        y (float): the level of the second factor
+        parameters (Iterable[float], optional): The parameters give an individual configuration for each experimental unit. Defaults to np.ones(2,).
+
+    Returns:
+        float: Dependent variable which serves as the response
+    """
+    
+    # this is an example of a ground truth function with two linear terms and a constant term 
+    # dependent_variable = parameters[0] * x + parameters[1] * y + parameters[0] - parameters[1]
+    assert len(conditions)==2, "conditions must be an iterable of length 2."
+    assert len(parameters)==2, "parameters must be an iterable of length 2."
+    
+    x, y = conditions[0], conditions[1]
+    
+    # this is an example of a bell-shaped function which can saturate
+    dependent_variable = (1-np.exp(-np.pow(x, 2)/parameters[0])) + np.pow(y, parameters[1])
+    
+    return dependent_variable
