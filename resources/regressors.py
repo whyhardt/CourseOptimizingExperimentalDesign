@@ -3,10 +3,8 @@ from torch import nn
 
 
 class FFN(nn.Module):
-    def __init__(self, n_units: int, n_conditions: int, embedding_size: int = 8, hidden_size: int = 16, dropout = 0., loss_fn: callable = torch.nn.functional.mse_loss):
+    def __init__(self, n_units: int, n_conditions: int, embedding_size: int = 8, hidden_size: int = 16, dropout = 0.):
         super(FFN, self).__init__()
-        
-        self.loss_fn = loss_fn
         
         # Embedding layer for units
         self.unit_embedding = nn.Embedding(n_units, embedding_size)
