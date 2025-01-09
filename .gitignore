@@ -1,3 +1,6 @@
 playground.py
 playground.ipynb
-tutorials/pyro_BOED_solution.ipynb
+tutorials/solutions/*
+tutorials/archive/*
+tutorials/day2/*
+resources/hangman.py

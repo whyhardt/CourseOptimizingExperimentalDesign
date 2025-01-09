@@ -1,6 +1,8 @@
+import numpy as np
 import torch
 from torch import nn
 
+from sklearn.base import BaseEstimator
 
 class FFN(nn.Module):
     def __init__(self, n_units: int, n_conditions: int, embedding_size: int = 8, hidden_size: int = 16, dropout = 0.):
@@ -20,7 +22,7 @@ class FFN(nn.Module):
         
         # check data types of tensors
         unit_id = unit_id.int()
-        condition = condition.float()
+        # condition = condition.float()
         
         # Obtain embedding for the given unit IDs
         unit_embedding = self.unit_embedding(unit_id)
@@ -33,33 +35,72 @@ class FFN(nn.Module):
         hidden = self.dropout(hidden)
         response_time = self.linear_out(hidden)
         return response_time.squeeze(1)
+
+
+class FFNRegressor(BaseEstimator):
     
-    # def fit(self, X: torch.Tensor, observation: torch.Tensor, max_epochs: int = 10, batch_size: int = 1024, verbose=False):
-    #     # check data types of tensors
-    #     observation = observation.float()
+    def __init__(
+        self,
+        module: nn.Module, 
+        criterion = nn.MSELoss, 
+        optimizer = torch.optim.Adam, 
+        max_epochs: int = 10, 
+        batch_size: int = 1024, 
+        lr: float = 0.01,
+        device = torch.device('cpu'),
+        verbose=True,
+        ):
         
-    #     self.train()
-    #     optimizer = optim.Adam(self.parameters(), lr=0.01)
-    #     for epoch in range(max_epochs):
-    #         epoch_loss = 0
-    #         idx_shuffled = torch.randperm(X.shape[0])
-    #         X, observation = X, observation[idx_shuffled]
-    #         n_batch_repetitions = 0
+        super(FFNRegressor, self).__init__()
+        
+        self.device = device
+        self.module = module.to(self.device)
+        self.criterion = criterion()
+        self.optimizer = optimizer(self.module.parameters(), lr=lr)
+        self.lr = lr
+        self.max_epochs = max_epochs
+        self.batch_size = batch_size
+        self.verbose = verbose
+        self.dataloader = torch.utils.data.DataLoader
+        self.dataset = torch.utils.data.Dataset
+        
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        X = torch.tensor(X.values.astype(np.float32) if hasattr(X, 'values') else X, dtype=torch.float32, device=self.device)
+        y = torch.tensor(y.values.astype(np.float32) if hasattr(y, 'values') else y, dtype=torch.float32, device=self.device)
+        
+        if self.verbose:
+            print('\nepoch\ttrain loss')
+        
+        self.module.train()
+        for epoch in range(self.max_epochs):
+            epoch_loss = 0
+            idx_shuffled = torch.randperm(X.shape[0])
+            X, y = X[idx_shuffled], y[idx_shuffled]
+            n_batch_repetitions = 0
             
-    #         for i in range(0, len(X), batch_size):
-    #             X_batch, observation_batch = X[i:i+batch_size], observation[i:i+batch_size]
+            for i in range(0, len(X), self.batch_size):
+                X_batch, y_batch = X[i:i+self.batch_size], y[i:i+self.batch_size]
                 
-    #             prediction = self.__call__(X_batch)
+                prediction = self.module(X_batch)
                 
-    #             loss = self.loss_fn(prediction, observation_batch)
+                loss = self.criterion(prediction, y_batch)
                 
-    #             optimizer.zero_grad()
-    #             loss.backward()
-    #             optimizer.step()
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
                 
-    #             epoch_loss += loss.item()
-    #             n_batch_repetitions += 1
+                epoch_loss += loss.item()
+                n_batch_repetitions += 1
             
-    #         if verbose:
-    #             print(f"Epoch {epoch + 1}/{max_epochs}, Loss: {epoch_loss/n_batch_repetitions:.8f}")        
+            if self.verbose:
+                print(f"{epoch + 1}/{self.max_epochs}\t{epoch_loss/n_batch_repetitions:.8f}")
+        self.module.eval()
+        
+    def predict(self, X: np.ndarray):
+        X = torch.tensor(X, dtype=torch.float32, device=self.device)
+        return self.module(X).detach().cpu().numpy()
+    
+    def set_device(self, device: torch.device):
+        self.device = device
+        self.module = self.module.to(device)
         

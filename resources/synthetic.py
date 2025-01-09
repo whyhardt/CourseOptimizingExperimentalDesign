@@ -103,6 +103,10 @@ def twoafc(
     if len(parameters.shape) == 1:
         parameters = parameters.reshape(1, 2)
     
+    # check that parameters are positive
+    if any(parameters[:, 0] < 0):
+        raise ValueError("The given parameters must be in the range [0, inf).")
+    
     params = dict(
         name="2AFC",
         resolution=resolution,
@@ -122,9 +126,9 @@ def twoafc(
     
     ratio = IV(
         name="ratio",
-        allowed_values=np.linspace(
-            minimum_value_condition, maximum_value_condition, resolution
-        ),
+        # allowed_values=np.linspace(
+        #     minimum_value_condition, maximum_value_condition, resolution
+        # ),
         value_range=(minimum_value_condition, maximum_value_condition),
         units="",
         variable_label="ratio",
@@ -133,7 +137,7 @@ def twoafc(
 
     scatteredness = IV(
         name="scatteredness",
-        allowed_values=np.linspace(minimum_value_condition, maximum_value_condition, resolution),
+        # allowed_values=np.linspace(minimum_value_condition, maximum_value_condition, resolution),
         value_range=(minimum_value_condition, maximum_value_condition),
         units="",
         variable_label="scatteredness",
@@ -167,6 +171,9 @@ def twoafc(
         
         for idx, x in enumerate(X):
             y = (normal_ground_truth(x[1:], parameters[int(x[0])])).reshape(-1)
+            if y == np.inf:
+                print(f'smth wrong at index {idx}')
+                print(f'conditions: {x}')
             Y[idx] = np.max(np.stack((np.zeros_like(y), y), axis=1), axis=1)
             
         experiment_data = pd.DataFrame(conditions)
@@ -197,8 +204,8 @@ def twoafc(
         y_label = "Scatteredness"
         
         # define the factor levels
-        x = ratio.allowed_values
-        y = scatteredness.allowed_values
+        x = ratio.allowed_values if ratio.allowed_values is not None else np.linspace(*variables.independent_variables[1].value_range) 
+        y = scatteredness.allowed_values if scatteredness.allowed_values is not None else np.linspace(*variables.independent_variables[2].value_range)
         x_mesh, y_mesh = np.meshgrid(x, y)
         p_id = np.full_like(x, p_id)
         sample_size = len(x)
@@ -227,9 +234,9 @@ def twoafc(
         # make a surface plot to visualize the ground_truth
         for dv in dvs:
             fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-            ax.plot_surface(x_mesh, y_mesh, z_ground_truth[dv], cmap=cm.Blues)
+            ax.plot_surface(x_mesh, y_mesh, z_ground_truth[dv], cmap=cm.Blues, alpha=0.7)
             if model is not None:
-                ax.plot_surface(x_mesh, y_mesh, z_model[dv], cmap=cm.Reds)
+                ax.plot_surface(x_mesh, y_mesh, z_model[dv], cmap=cm.Reds, alpha=0.7)
             
             ax.set_xlim(x_limit)
             ax.set_ylim(y_limit)
@@ -252,7 +259,6 @@ def twoafc(
     )
     
     return collection
-
 
 
 def noise(noise_level: float) -> float:
@@ -399,5 +405,6 @@ def normal_ground_truth(conditions, parameters=np.ones(2,)):
     
     # this is an example of a bell-shaped function which can saturate
     dependent_variable = (1-np.exp(-np.power(x, 2)/parameters[0])) + np.power(y, parameters[1])
-    
+    if dependent_variable == np.inf:
+        print('stop')
     return dependent_variable

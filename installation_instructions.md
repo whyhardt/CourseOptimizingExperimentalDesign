@@ -56,15 +56,13 @@ source venv/bin/activate
 pip install ipykernel
 pip install -r requirements.txt
 ```
-We also need Pytorch for using the Pyro-Library. 
-But since Pytorch is a huge package and we do not need any GPU support for the Pyro tutorial, we will install only its CPU-Version which safes a lot disk space:
+We also need Pytorch for a neural network regressor which we will use in the course. 
+Since Pytorch is a huge package and we do not need necessarily GPU support due to the simplicity of the neural network model, we will install only its CPU-Version which safes a lot disk space:
 ```bash
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 ```
-Additionally to Pytorch, we also need Pyro for the last part of the course. Install if after you installed Pytorch with
-```bash
-pip install pyro-ppl
-```
+
+Now you can either use your own IDE (needs to support jupyter notebooks) or follow the next steps to run jupyter notebooks in your browser. Alternatively you can use online services like Kaggle or Google Colab.
 
 ### Step 6: Create a Jupyter Kernel
 
