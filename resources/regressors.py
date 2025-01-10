@@ -5,36 +5,47 @@ from torch import nn
 from sklearn.base import BaseEstimator
 
 class FFN(nn.Module):
-    def __init__(self, n_units: int, n_conditions: int, embedding_size: int = 8, hidden_size: int = 16, dropout = 0.):
+    def __init__(self, n_units: int, n_conditions: int, embedding_size: int = 8, hidden_size: int = 16, dropout = 0., activation=nn.Identity):
         super(FFN, self).__init__()
         
+        self.n_units = n_units
+        self.n_conditions = n_conditions
+        self.embedding_size = embedding_size
+        self.hidden_size = hidden_size
+        self.dropout = dropout
+        
         # Embedding layer for units
-        self.unit_embedding = nn.Embedding(n_units, embedding_size)
+        self.unit_embedding = nn.Embedding(n_units, embedding_size) if n_units > 0 else None
         
         # Linear layer to process the concatenated input
         self.linear_in = nn.Linear(embedding_size + n_conditions, hidden_size)
         self.activation = nn.ReLU()
         self.dropout = nn.Dropout(dropout)
         self.linear_out = nn.Linear(hidden_size, 1)
+        self.activation_out = activation()
 
     def forward(self, X):
-        unit_id, condition = X[:, 0][:, None], X[:, 1:]
         
-        # check data types of tensors
-        unit_id = unit_id.int()
-        # condition = condition.float()
-        
-        # Obtain embedding for the given unit IDs
-        unit_embedding = self.unit_embedding(unit_id)
-        
-        # Concatenate unit embedding and conditions along the last dimension
-        concatenated_input = torch.cat((unit_embedding, condition.unsqueeze(1)), dim=-1)  # Corrected usage
-        
+        if self.unit_embedding is not None:
+            unit_id, condition = X[:, 0][:, None], X[:, 1:]
+            
+            # check data types of tensors
+            unit_id = unit_id.int()
+            
+            # Obtain embedding for the given unit IDs
+            unit_embedding = self.unit_embedding(unit_id)
+            
+            # Concatenate unit embedding and conditions along the last dimension
+            concatenated_input = torch.cat((unit_embedding, condition.unsqueeze(1)), dim=-1)  # Corrected usage
+        else:
+            # if no unit embedding in network -> pass in X only the necessary conditions; Not the unit_id
+            concatenated_input = X
+            
         # Pass the concatenated input through the linear layer
         hidden = self.activation(self.linear_in(concatenated_input))
         hidden = self.dropout(hidden)
-        response_time = self.linear_out(hidden)
-        return response_time.squeeze(1)
+        out = self.activation_out(self.linear_out(hidden))
+        return out.squeeze(1)
 
 
 class FFNRegressor(BaseEstimator):

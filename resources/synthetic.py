@@ -90,7 +90,7 @@ def twoafc(
     2AFC experiment with two independent variables
 
     Args:
-        parameters: abstract parameters for the underlying ground truth model; must be an array of shape (n_units, 2)
+        parameters: abstract participant parameters for the underlying ground truth model; must be an array of shape (n_units, 2)
         name: name of the experiment
         resolution: number of allowed values for stimulus
         Examples:
@@ -405,6 +405,5 @@ def normal_ground_truth(conditions, parameters=np.ones(2,)):
     
     # this is an example of a bell-shaped function which can saturate
     dependent_variable = (1-np.exp(-np.power(x, 2)/parameters[0])) + np.power(y, parameters[1])
-    if dependent_variable == np.inf:
-        print('stop')
+
     return dependent_variable
