@@ -51,7 +51,7 @@ while turns > 0:
     # exit the script
         break            
     # ask the user go guess a character
-    guess = input("guess a character:") 
+    guess = input("   guess a character:") 
 
     # set the players guess to guesses
     guesses += guess                    
