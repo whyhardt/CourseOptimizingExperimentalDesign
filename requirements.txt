@@ -1,7 +1,31 @@
-matplotlib==3.9.2
+# Core scientific computing
 numpy==1.26.4
-scikit_learn==1.5.2
 scipy==1.14.1
-sweetpea==0.2.7
-autora==4.2.0
 pandas==2.2.3
+matplotlib==3.9.2
+
+# Machine learning
+scikit_learn==1.5.2
+torch>=2.0.0
+
+# AutoRA framework
+autora==4.2.0
+
+# AutoRA experimentalists
+autora-experimentalist-grid>=1.0.0
+autora-experimentalist-random>=1.0.0
+autora-experimentalist-uncertainty>=1.0.0
+autora-experimentalist-inequality>=1.0.0
+autora-experimentalist-novelty>=1.0.0
+
+# AutoRA experiment runners
+autora-experiment-runner-synthetic-abstract-equation>=1.0.0
+
+# Experimental design
+sweetpea==0.2.7
+
+# Jupyter notebook support
+jupyter>=1.0.0
+notebook>=6.5.0
+ipykernel>=6.25.0
+ipywidgets>=8.0.0

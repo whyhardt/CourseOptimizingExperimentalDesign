@@ -51,7 +51,7 @@ class experimental_unit:
         return np.max(np.stack((np.zeros_like(obs), obs), axis=1), axis=1)
 
 
-def generate_dataset(experimental_units: Iterable[experimental_unit], conditions: Iterable[Iterable[Number]], n_repetitions: int = 1, train_ratio: float = 1.0):
+def generate_dataset(experimental_units: Iterable[experimental_unit], conditions: Iterable[Iterable[Number]], n_repetitions: int = 1, shuffle: bool = False):
     # check that each element of conditions has only two numeric sub-elements
     assert any([[isinstance(e, Number) for e in c] for c in conditions]), 'Some elements in the conditions argument appear to be not of length 2 or are non-numeric'
     
@@ -71,16 +71,12 @@ def generate_dataset(experimental_units: Iterable[experimental_unit], conditions
                 dataset[i, :, k, 1:1+conditions.shape[-1]] = conditions
                 dataset[i, :, k, -1] = observation
     
-    dataset_train = dataset[:, :int(dataset.shape[1] * train_ratio)].reshape(-1, dataset.shape[-1])
-    if train_ratio < 1.0:
-        dataset_test = dataset[:, int(dataset.shape[1] * train_ratio):].reshape(-1, dataset.shape[-1])
-    else:
-        dataset_test = None
-        
-    # if shuffle:
-    #     np.random.shuffle(dataset)
-        
-    return dataset_train, dataset_test
+    if shuffle:
+        np.random.shuffle(dataset)
+    
+    dataset_flat = dataset.reshape(-1, dataset.shape[-1])
+    
+    return dataset, dataset_flat
 
 
 def twoafc(
