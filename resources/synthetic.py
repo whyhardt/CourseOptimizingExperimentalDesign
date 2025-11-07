@@ -9,6 +9,28 @@ from autora.experiment_runner.synthetic.utilities import SyntheticExperimentColl
 from autora.variable import DV, IV, ValueType, VariableCollection
 
 
+def cognitive_model(ratio, scatteredness, parameters=np.ones(2,)):
+    """This cognitive model predicts response times in the 2AFC task
+    
+    Args:
+        ratio (float): The balance of blue vs orange tiles (0 to 1)
+        scatteredness (float): How randomly distributed the tiles are (0 to 1)
+        parameters (Iterable[float], optional): Individual participant parameters. 
+            parameters[0]: sensitivity to ratio
+            parameters[1]: sensitivity to scatteredness
+
+    Returns:
+        float: Predicted response time
+    """
+    
+    # This is a bell-shaped function that can saturate
+    # Response time increases with ratio (more balanced = harder decision)
+    # Response time also increases with scatteredness (more scattered = harder to process)
+    response_time = (1 - np.exp(-np.power(ratio, 2) / parameters[0])) + np.power(scatteredness, parameters[1])
+    
+    return response_time
+
+
 class experimental_unit:
     
     def __init__(self,
@@ -87,6 +109,7 @@ def twoafc(
     resolution=100,
     minimum_value_condition: float = 0.,
     maximum_value_condition: float = 1.,
+    discrete_iv: bool = False,
 ):
     """
     2AFC experiment with two independent variables
@@ -120,30 +143,35 @@ def twoafc(
         allowed_values=np.arange(
             0, len(parameters)
         ),
-        value_range=(0, len(parameters)-1),
+        # value_range=(0, len(parameters)-1),
         units="",
         variable_label="participant_id",
         type=ValueType.REAL,
     )
     
+    if discrete_iv:
+        kwargs = {
+            'allowed_values': np.linspace(minimum_value_condition, maximum_value_condition, resolution),
+        }
+    else:
+        kwargs = {
+            'value_range': (minimum_value_condition, maximum_value_condition),
+        }
+    
     ratio = IV(
         name="ratio",
-        # allowed_values=np.linspace(
-        #     minimum_value_condition, maximum_value_condition, resolution
-        # ),
-        value_range=(minimum_value_condition, maximum_value_condition),
         units="",
         variable_label="ratio",
         type=ValueType.REAL,
+        **kwargs,
     )
 
     scatteredness = IV(
         name="scatteredness",
-        # allowed_values=np.linspace(minimum_value_condition, maximum_value_condition, resolution),
-        value_range=(minimum_value_condition, maximum_value_condition),
         units="",
         variable_label="scatteredness",
         type=ValueType.REAL,
+        **kwargs,
     )
 
     response_time = DV(
@@ -172,7 +200,7 @@ def twoafc(
         Y = np.zeros((X.shape[0], len(variables.dependent_variables)))
         
         for idx, x in enumerate(X):
-            y = (normal_ground_truth(x[1:], parameters[int(x[0])])).reshape(-1)
+            y = (cognitive_model(x[0], x[1], parameters[int(x[0])])).reshape(-1)
             if y == np.inf:
                 print(f'smth wrong at index {idx}')
                 print(f'conditions: {x}')
