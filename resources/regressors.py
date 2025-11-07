@@ -74,6 +74,8 @@ class FFNRegressor(BaseEstimator):
         self.verbose = verbose
         self.dataloader = torch.utils.data.DataLoader
         self.dataset = torch.utils.data.Dataset
+        self.state_dict_init_module = module.state_dict()
+        self.state_dict_init_optim = self.optimizer.state_dict()
         
     def fit(self, X: np.ndarray, y: np.ndarray):
         X = torch.tensor(X.values.astype(np.float32) if hasattr(X, 'values') else X, dtype=torch.float32, device=self.device)
@@ -81,6 +83,9 @@ class FFNRegressor(BaseEstimator):
         
         if self.verbose:
             print('\nepoch\ttrain loss')
+        
+        self.module.load_state_dict(self.state_dict_init_module)
+        self.optimizer.load_state_dict(self.state_dict_init_optim)
         
         self.module.train()
         for epoch in range(self.max_epochs):

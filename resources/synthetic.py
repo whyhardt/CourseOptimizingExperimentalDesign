@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from functools import partial
 import pandas as pd
+import itertools
 
 from autora.experiment_runner.synthetic.utilities import SyntheticExperimentCollection
 from autora.variable import DV, IV, ValueType, VariableCollection
@@ -109,6 +110,7 @@ def twoafc(
     resolution=100,
     minimum_value_condition: float = 0.,
     maximum_value_condition: float = 1.,
+    noise_level: float = 0.,
     discrete_iv: bool = False,
 ):
     """
@@ -138,41 +140,53 @@ def twoafc(
         parameters=parameters,
     )
     
-    participant_id = IV(
-        name="participant_id",
-        allowed_values=np.arange(
-            0, len(parameters)
-        ),
-        # value_range=(0, len(parameters)-1),
-        units="",
-        variable_label="participant_id",
-        type=ValueType.REAL,
-    )
+    # participant_id = IV(
+    #     name="participant_id",
+    #     allowed_values=np.arange(
+    #         0, len(parameters)
+    #     ),
+    #     # value_range=(0, len(parameters)-1),
+    #     units="",
+    #     variable_label="participant_id",
+    #     type=ValueType.REAL,
+    # )
     
     if discrete_iv:
-        kwargs = {
-            'allowed_values': np.linspace(minimum_value_condition, maximum_value_condition, resolution),
-        }
-    else:
-        kwargs = {
-            'value_range': (minimum_value_condition, maximum_value_condition),
-        }
-    
-    ratio = IV(
-        name="ratio",
-        units="",
-        variable_label="ratio",
-        type=ValueType.REAL,
-        **kwargs,
-    )
+        ratio = IV(
+            name="ratio",
+            units="",
+            variable_label="ratio",
+            type=ValueType.REAL,
+            allowed_values=np.linspace(minimum_value_condition, maximum_value_condition, resolution),
+            # value_range=(minimum_value_condition, maximum_value_condition)
+        )
 
-    scatteredness = IV(
-        name="scatteredness",
-        units="",
-        variable_label="scatteredness",
-        type=ValueType.REAL,
-        **kwargs,
-    )
+        scatteredness = IV(
+            name="scatteredness",
+            units="",
+            variable_label="scatteredness",
+            type=ValueType.REAL,
+            allowed_values=np.linspace(minimum_value_condition, maximum_value_condition, resolution),
+            # value_range=(minimum_value_condition, maximum_value_condition)
+        )
+    else:
+        ratio = IV(
+            name="ratio",
+            units="",
+            variable_label="ratio",
+            type=ValueType.REAL,
+            # allowed_values=np.linspace(minimum_value_condition, maximum_value_condition, resolution),
+            value_range=(minimum_value_condition, maximum_value_condition)
+        )
+
+        scatteredness = IV(
+            name="scatteredness",
+            units="",
+            variable_label="scatteredness",
+            type=ValueType.REAL,
+            # allowed_values=np.linspace(minimum_value_condition, maximum_value_condition, resolution),
+            value_range=(minimum_value_condition, maximum_value_condition)
+        )
 
     response_time = DV(
         name="response_time",
@@ -183,7 +197,8 @@ def twoafc(
     )
 
     variables = VariableCollection(
-        independent_variables=[participant_id, ratio, scatteredness],
+        # independent_variables=[participant_id, ratio, scatteredness],
+        independent_variables=[ratio, scatteredness],
         dependent_variables=[response_time],
     )
 
@@ -191,27 +206,42 @@ def twoafc(
     
     def run(
         conditions: Union[pd.DataFrame, np.ndarray, np.recarray],
-        added_noise: float = 0.01,
         random_state: Optional[int] = None,
-    ):
-
+        shuffle: bool = False,
+    ) -> pd.DataFrame:
+        
         rng = np.random.default_rng(random_state)
         X = np.array(conditions)
-        Y = np.zeros((X.shape[0], len(variables.dependent_variables)))
+        Y = np.zeros((X.shape[0] * unit_ids.shape[0], len(variables.dependent_variables)))
         
-        for idx, x in enumerate(X):
-            y = (cognitive_model(x[0], x[1], parameters[int(x[0])])).reshape(-1)
-            if y == np.inf:
-                print(f'smth wrong at index {idx}')
-                print(f'conditions: {x}')
-            Y[idx] = np.max(np.stack((np.zeros_like(y), y), axis=1), axis=1)
-            
-        experiment_data = pd.DataFrame(conditions)
-        experiment_data.columns = [v.name for v in variables.independent_variables]
+        # X: (n_samples, n_features)
+        # unit_ids: (n_units,)
+        n_samples, n_features = X.shape
+        n_units = unit_ids.shape[0]
+
+        # Repeat each unit_id for all samples
+        unit_col = np.repeat(unit_ids, n_samples)[:, None]  # shape (n_units * n_samples, 1)
+
+        # Tile X for each unit
+        X_tiled = np.tile(X, (n_units, 1))  # shape (n_units * n_samples, n_features)
+        
+        # Combine them
+        X_expanded = np.hstack([unit_col, X_tiled]) 
+        
+        for idx, x in enumerate(X_expanded):
+            Y[idx] = (cognitive_model(x[1], x[2], parameters[int(x[0])])).reshape(-1) + np.random.normal(0, noise_level)
+        
+        if shuffle:
+            shuffle_idx = np.random.randint(0, X_expanded.shape[0], size=X_expanded.shape[0])
+            X_expanded = X_expanded[shuffle_idx]
+            Y = Y[shuffle_idx]
+        
+        experiment_data = pd.DataFrame(X_expanded)
+        experiment_data.columns = ['unit_id']+[v.name for v in variables.independent_variables]
         experiment_data[variables.dependent_variables[0].name] = Y
         return experiment_data
 
-    ground_truth = partial(run, added_noise=0.0)
+    ground_truth = partial(run)
 
     def domain():
         p_initial_values = variables.independent_variables[0].allowed_values
@@ -221,23 +251,26 @@ def twoafc(
         return X
 
     def plotter(
+        participant_id: int = 0,
         model=None,
     ):
         import matplotlib.pyplot as plt
         from matplotlib import cm
         
-        p_id = np.array([0])
-
-        x_limit = variables.independent_variables[1].value_range
-        y_limit = variables.independent_variables[2].value_range
+        x_limit = variables.independent_variables[0].value_range
+        y_limit = variables.independent_variables[1].value_range
         x_label = "Ratio"
         y_label = "Scatteredness"
         
         # define the factor levels
-        x = ratio.allowed_values if ratio.allowed_values is not None else np.linspace(*variables.independent_variables[1].value_range) 
-        y = scatteredness.allowed_values if scatteredness.allowed_values is not None else np.linspace(*variables.independent_variables[2].value_range)
+        x = ratio.allowed_values if ratio.allowed_values is not None else np.linspace(*variables.independent_variables[0].value_range) 
+        y = scatteredness.allowed_values if scatteredness.allowed_values is not None else np.linspace(*variables.independent_variables[1].value_range)
+        
+        x_size = x.shape[0]
+        y_size = y.shape[0]
+        
         x_mesh, y_mesh = np.meshgrid(x, y)
-        p_id = np.full_like(x, p_id)
+        participant_ids = np.full((x.shape[0], 1), participant_id)
         sample_size = len(x)
 
         # collect the observations for each participant
@@ -252,28 +285,29 @@ def twoafc(
             z_model = {dv: np.zeros((sample_size, sample_size)) for dv in dvs}
 
         for i in range(sample_size):
-            x = np.stack((p_id, x_mesh[i], y_mesh[i]), axis=-1)
-            z = ground_truth(x)
+            x = np.stack((x_mesh[i], y_mesh[i]), axis=-1)
+            z = ground_truth(x)[int(participant_id*x_mesh[i].shape[0]):int((participant_id+1)*x_mesh[i].shape[0])]
             if model is not None:
-                z_m = model.predict(x)
+                z_m = model.predict(np.concatenate((participant_ids, x), axis=-1))
             for idx, dv in enumerate(dvs):
                 z_ground_truth[dv][i, :] = z[dv]
                 if model is not None:
-                    z_model[dv][i, :] = z_m[idx]
+                    z_model[dv][i, :] = z_m.squeeze()
         
         # make a surface plot to visualize the ground_truth
         for dv in dvs:
             fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-            ax.plot_surface(x_mesh, y_mesh, z_ground_truth[dv], cmap=cm.Blues, alpha=0.7)
+            ax.plot_surface(x_mesh, y_mesh, z_ground_truth[dv], cmap=cm.Blues, alpha=0.7, label='true')
             if model is not None:
-                ax.plot_surface(x_mesh, y_mesh, z_model[dv], cmap=cm.Reds, alpha=0.7)
+                ax.plot_surface(x_mesh, y_mesh, z_model[dv], cmap=cm.Reds, alpha=0.7, label='predicted')
             
             ax.set_xlim(x_limit)
             ax.set_ylim(y_limit)
             ax.set_xlabel(x_label, fontsize="large")
             ax.set_ylabel(y_label, fontsize="large")
             ax.set_zlabel(dv, fontsize="large")
-            ax.set_title("2AFC; DV: " + dv, fontsize="x-large")
+            ax.set_title(f"2AFC; participant id: {participant_id}")
+            ax.legend()
             plt.show()
 
     collection = SyntheticExperimentCollection(
