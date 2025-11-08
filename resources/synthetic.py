@@ -208,7 +208,11 @@ def twoafc(
         conditions: Union[pd.DataFrame, np.ndarray, np.recarray],
         random_state: Optional[int] = None,
         shuffle: bool = False,
+        noise_level_run: float = -1,
     ) -> pd.DataFrame:
+        
+        if noise_level_run == -1:
+            noise_level_run = noise_level
         
         rng = np.random.default_rng(random_state)
         X = np.array(conditions)
@@ -229,7 +233,7 @@ def twoafc(
         X_expanded = np.hstack([unit_col, X_tiled]) 
         
         for idx, x in enumerate(X_expanded):
-            Y[idx] = (cognitive_model(x[1], x[2], parameters[int(x[0])])).reshape(-1) + np.random.normal(0, noise_level)
+            Y[idx] = (cognitive_model(x[1], x[2], parameters[int(x[0])])).reshape(-1) + np.random.normal(0, noise_level_run)
         
         if shuffle:
             shuffle_idx = np.random.randint(0, X_expanded.shape[0], size=X_expanded.shape[0])
@@ -286,7 +290,7 @@ def twoafc(
 
         for i in range(sample_size):
             x = np.stack((x_mesh[i], y_mesh[i]), axis=-1)
-            z = ground_truth(x)[int(participant_id*x_mesh[i].shape[0]):int((participant_id+1)*x_mesh[i].shape[0])]
+            z = ground_truth(x, noise_level_run=0)[int(participant_id*x_mesh[i].shape[0]):int((participant_id+1)*x_mesh[i].shape[0])]
             if model is not None:
                 z_m = model.predict(np.concatenate((participant_ids, x), axis=-1))
             for idx, dv in enumerate(dvs):
