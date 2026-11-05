@@ -7,3 +7,14 @@ resources/hangman.py
 tutorials/modAL.ipynb
 presentations
 groupprojects
+CLAUDE.md
+COURSE_PLAN.md
+slides
+# participant data recorded with experiments/
+data/
+__pycache__
+lecture
+presentations
+*.csv
+.claude
+tutorials/_build

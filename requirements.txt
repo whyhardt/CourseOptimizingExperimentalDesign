@@ -8,18 +8,13 @@ matplotlib==3.9.2
 scikit_learn==1.5.2
 torch>=2.0.0
 
-# AutoRA framework
+# AutoRA framework (includes autora-core with the grid and random experimentalists, and autora-synthetic)
 autora==4.2.0
 
 # AutoRA experimentalists
-autora-experimentalist-grid>=1.0.0
-autora-experimentalist-random>=1.0.0
 autora-experimentalist-uncertainty>=1.0.0
 autora-experimentalist-inequality>=1.0.0
 autora-experimentalist-novelty>=1.0.0
-
-# AutoRA experiment runners
-autora-experiment-runner-synthetic-abstract-equation>=1.0.0
 
 # Experimental design
 sweetpea==0.2.7
@@ -29,3 +24,6 @@ jupyter>=1.0.0
 notebook>=6.5.0
 ipykernel>=6.25.0
 ipywidgets>=8.0.0
+
+# Local experiments (experiments/)
+pygame==2.6.1
