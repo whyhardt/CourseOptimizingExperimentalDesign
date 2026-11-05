@@ -61,7 +61,7 @@ def design_summary(trials: pd.DataFrame) -> pd.Series:
     pairs = pd.Series([a + b for a, b in zip(letters[:-1], letters[1:])]).value_counts()
     runs = max(len(r) for r in "".join(letters).replace("CI", "C I").replace("IC", "I C").split())
     summary = {"trials": len(trials), "congruent": int(congruent.sum()), "incongruent": int((~congruent).sum())}
-    summary.update({f"{k[0]}→{k[1]}": int(pairs.get(k, 0)) for k in ["CC", "CI", "IC", "II"]})
+    summary.update({k: int(pairs.get(k, 0)) for k in ["CC", "CI", "IC", "II"]})
     summary.update({f"ink {c}": int((trials["ink"] == c).sum()) for c in COLORS})
     summary["ink repetitions"] = int((trials["ink"].values[1:] == trials["ink"].values[:-1]).sum())
     summary["word repetitions"] = int((trials["word"].values[1:] == trials["word"].values[:-1]).sum())

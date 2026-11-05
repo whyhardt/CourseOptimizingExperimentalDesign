@@ -3,8 +3,8 @@
 The example data is only a fallback for when no class data is available yet. It uses the
 same block design as the experiment (random trials with hidden probe sequences) and a simple
 generative model: ex-Gaussian RTs, an individual Stroop effect, a congruency sequence effect
-(smaller Stroop effect after incongruent trials), a benefit for repeated ink colours, practice
-and occasional errors.
+(smaller Stroop effect after incongruent trials), a benefit for repeated ink colours and an extra
+benefit for complete repetitions (same word and ink; Mayr et al. 2003), practice and occasional errors.
 """
 
 import glob
@@ -56,6 +56,8 @@ def simulate_participant(trials: pd.DataFrame, participant: str = "SIM1", rng: O
         mu = base + incongruent * effect - 0.4 * i
         if previous is not None and previous.ink == t.ink:
             mu -= 25                           # repeating the ink colour (and response) is faster
+            if previous.word == t.word:
+                mu -= 40                       # a complete repetition (same word too) is even faster
         rt = rng.normal(mu - 110, 55) + rng.exponential(110)
         p_error = 0.02 + 0.05 * incongruent
         response = t.ink if rng.random() > p_error else rng.choice([c for c in colors if c != t.ink])

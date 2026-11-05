@@ -18,3 +18,6 @@ presentations
 *.csv
 .claude
 tutorials/_build
+
+# the predefined Session 3 design must reach the students
+!designs/designed.csv

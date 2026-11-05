@@ -4,11 +4,14 @@ Examples (run from the repository root):
     python -m experiments.stroop --practice
     python -m experiments.stroop                       # asks for your ID; Enter assigns a new one - note it!
     python -m experiments.stroop --id K7QM --block 2   # another block with your ID (no question asked)
-    python -m experiments.stroop --id K7QM --block comp1 --design designs/group1.csv
+    python -m experiments.stroop --block group1 --design designs/group1.csv
+    python -m experiments.stroop --block random        # Session 3: the random block
 
-The default block is a random sequence with hidden probe sequences: a run of three congruent
-(CCC) or three incongruent (III) trials, followed by a congruent or incongruent target trial.
-They show how the Stroop effect depends on the recent history (congruency sequence effect).
+Without a design file, the block is a random sequence. Block 1 (the default, Session 1) also
+hides probe sequences: a run of three congruent (CCC) or three incongruent (III) trials, followed
+by a congruent or incongruent target trial. They show how the Stroop effect depends on the recent
+history (congruency sequence effect). All other blocks are purely random (unless --probe-reps is
+given) - the random baseline that the group designs compete against in Session 3.
 
 A design file is a CSV with one row per trial and the columns `word`, `ink` and optionally
 `task` ('color' or 'word'). Trials are played in the given order, e.g. a SweetPea sequence.
@@ -108,9 +111,17 @@ def random_trials_with_probes(n_trials: int = 96, p_congruent: float = 0.5, prob
 
 
 def load_trials(path: str) -> pd.DataFrame:
-    """Load a trial sequence (e.g. exported from SweetPea) from a CSV file."""
+    """Load a trial sequence (e.g. exported from SweetPea) from a CSV file.
+
+    A file with a `sequence` column is a pool of sequences (e.g. 100 SweetPea samples of one
+    design); one of them is picked at random and its number is stored in trials.attrs["sequence"].
+    """
     trials = pd.read_csv(path)
     trials.columns = [c.strip().lower() for c in trials.columns]
+    pick = None
+    if "sequence" in trials:
+        pick = int(random.choice(sorted(trials["sequence"].unique())))
+        trials = trials[trials["sequence"] == pick].reset_index(drop=True)
     missing = {"word", "ink"} - set(trials.columns)
     if missing:
         raise ValueError(f"Design file needs the columns {sorted(missing)}")
@@ -124,7 +135,10 @@ def load_trials(path: str) -> pd.DataFrame:
         raise ValueError(f"Unknown colours in design file: {unknown}. Allowed: {list(COLORS)}")
     if not set(trials["task"]) <= {"color", "word"}:
         raise ValueError("The task column may only contain 'color' or 'word'")
-    return trials[["word", "ink", "task"]].assign(probe="", probe_position=-1)
+    trials = trials[["word", "ink", "task"]].assign(probe="", probe_position=-1)
+    if pick is not None:
+        trials.attrs["sequence"] = pick
+    return trials
 
 
 def draw_legend(display: Display):
@@ -232,8 +246,9 @@ def main(argv=None):
     parser.add_argument("--block", default="1", help="block label stored with the data (default: 1)")
     parser.add_argument("--n-trials", type=int, default=96, help="trials for the random design (default: 96)")
     parser.add_argument("--p-congruent", type=float, default=0.5, help="P(congruent) for the random design (default: 0.5)")
-    parser.add_argument("--probe-reps", type=int, default=2,
-                        help="repetitions of each hidden probe sequence in the random design; 0 = none (default: 2)")
+    parser.add_argument("--probe-reps", type=int,
+                        help="repetitions of each hidden probe sequence in the random design; 0 = none "
+                             "(default: 2 in block 1, 0 in all other blocks)")
     parser.add_argument("--design", help="CSV with columns word, ink[, task] to play instead of a random sequence")
     parser.add_argument("--seed", type=int, help="random seed for the random design")
     parser.add_argument("--practice", action="store_true", help="short practice block with feedback; nothing is saved")
@@ -255,6 +270,9 @@ def main(argv=None):
         print()
         return 1
 
+    if args.probe_reps is None:
+        args.probe_reps = 2 if args.block == "1" else 0
+
     if args.design:
         try:
             trials = load_trials(args.design)
@@ -262,6 +280,8 @@ def main(argv=None):
             print(f"Could not load design file {args.design}: {error}")
             return 1
         design = os.path.basename(args.design)
+        if "sequence" in trials.attrs:
+            design += f" #{trials.attrs['sequence']}"
     elif args.practice:
         trials, design = random_trials(16, args.p_congruent, args.seed), "practice"
     elif args.probe_reps > 0:
