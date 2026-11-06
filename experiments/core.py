@@ -1,8 +1,10 @@
 """Shared building blocks for the local experiments: window, text, timed key responses, saving."""
 
 import os
+import platform
 import re
 import secrets
+import sys
 import time
 from datetime import datetime
 from typing import Callable, Dict, Iterable, Optional, Tuple
@@ -11,9 +13,11 @@ import pandas as pd
 
 # hide the pygame greeting before importing it
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
-# draw without OpenGL: conda's libstdc++ is often too old for the system GL drivers on Linux,
-# which makes the window close immediately (GLX BadValue); 2D text does not need GL anyway
-os.environ.setdefault("SDL_FRAMEBUFFER_ACCELERATION", "0")
+# Linux only: draw without OpenGL. conda's libstdc++ is often too old for the system GL drivers,
+# which makes the window close immediately (GLX BadValue); 2D text does not need GL anyway.
+# On macOS this setting can make window creation fail, so it is not set there.
+if sys.platform.startswith("linux"):
+    os.environ.setdefault("SDL_FRAMEBUFFER_ACCELERATION", "0")
 import pygame
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -44,12 +48,39 @@ class Display:
         pygame.init()
         flags = pygame.FULLSCREEN if fullscreen else 0
         size = (0, 0) if fullscreen else (1024, 768)
-        self.screen = pygame.display.set_mode(size, flags)
+        self.screen = self._open_window(size, flags)
         pygame.display.set_caption("Optimizing Experimental Design")
         pygame.mouse.set_visible(not fullscreen)
         self.width, self.height = self.screen.get_size()
         self.simulate = simulate
         self._fonts: Dict[int, pygame.font.Font] = {}
+
+    @staticmethod
+    def _open_window(size, flags):
+        """Open the window; if that fails, retry once with the other framebuffer setting
+        (with / without hardware acceleration), which is the usual cause on some machines."""
+        try:
+            return pygame.display.set_mode(size, flags)
+        except pygame.error as first_error:
+            previous = os.environ.get("SDL_FRAMEBUFFER_ACCELERATION")
+            if previous is None:
+                os.environ["SDL_FRAMEBUFFER_ACCELERATION"] = "0"
+            else:
+                del os.environ["SDL_FRAMEBUFFER_ACCELERATION"]
+            pygame.display.quit()
+            pygame.display.init()
+            try:
+                return pygame.display.set_mode(size, flags)
+            except pygame.error as second_error:
+                raise RuntimeError(
+                    "Could not open the experiment window.\n"
+                    f"  first try:  {str(first_error) or '(no message)'}\n"
+                    f"  second try: {str(second_error) or '(no message)'}\n"
+                    f"  system: {platform.platform()}, Python {platform.python_version()}, "
+                    f"pygame {pygame.version.ver}, SDL {'.'.join(map(str, pygame.get_sdl_version()))}, "
+                    f"video driver: {os.environ.get('SDL_VIDEODRIVER', 'default')}\n"
+                    "Please send this message to the instructor."
+                ) from second_error
 
     def font(self, size: int) -> pygame.font.Font:
         if size not in self._fonts:

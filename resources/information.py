@@ -112,6 +112,21 @@ def rt_information(data: pd.DataFrame, n_bins: int = 4) -> pd.Series:
     return pd.Series(out).round(4)
 
 
+def rt_bin_table(data: pd.DataFrame, n_bins: int = 4) -> pd.DataFrame:
+    """Share of each response-time bin (quantiles per player) within congruent and incongruent trials, and its entropy.
+
+    H(RT bin | congruency) is the average of the two entropies, weighted by how often each congruency occurs.
+    """
+    clean = clean_trials(data).dropna(subset=["prev_congruency"]).copy()
+    clean["rt bin"] = clean.groupby("participant")["rt_ms"].transform(
+        lambda rt: pd.qcut(rt, n_bins, labels=False, duplicates="drop"))
+    table = pd.crosstab(clean["congruency"], clean["rt bin"], normalize="index")
+    table.columns = ["fastest quarter", "2nd quarter", "3rd quarter", "slowest quarter"][:n_bins]
+    table["H (bits)"] = [entropy(row) for row in table.to_numpy()]
+    table["share of trials"] = clean["congruency"].value_counts(normalize=True)
+    return table.round(3)
+
+
 # ------------------------------------------------------------------ models as measuring instruments
 
 REGRESSORS = ["incongruent", "after incongruent", "incongruent x after incongruent", "ink repeat",
@@ -136,9 +151,14 @@ def model_table(block_data: pd.DataFrame) -> pd.DataFrame:
     return d
 
 
-def fit_model(train: pd.DataFrame) -> dict:
-    """Least squares: RT = player mean + Σ b · regressor. Regressors that never vary in the data get b = 0."""
+def fit_model(train: pd.DataFrame, exclude_ink_repetitions: bool = False) -> dict:
+    """Least squares: RT = player mean + Σ b · regressor. Regressors that never vary in the data get b = 0.
+
+    With exclude_ink_repetitions, trials that repeat the previous ink colour are dropped before fitting.
+    """
     d = model_table(train)
+    if exclude_ink_repetitions:
+        d = d[d["ink repeat"] == 0]
     x = d[REGRESSORS].to_numpy()
     x = x - d.groupby("participant")[REGRESSORS].transform("mean").to_numpy()   # within-player
     y = (d["rt_ms"] - d.groupby("participant")["rt_ms"].transform("mean")).to_numpy()
@@ -167,15 +187,32 @@ def information_gain(model: dict, test: pd.DataFrame) -> float:
     return float(gain.mean())
 
 
-def cross_validation(data: pd.DataFrame, train_blocks=("designed", "random"),
-                     test_blocks=("designed", "random", "1")) -> pd.DataFrame:
-    """Bits per trial gained on each held-out block type by a model trained on each block type."""
+TRAINING_SOURCES = {"predefined": ("designed", False), "random": ("random", False),
+                    "random, repetitions removed": ("random", True)}
+
+
+def cross_validation(data: pd.DataFrame, test_blocks=("designed", "random"), seed: int = 0) -> pd.DataFrame:
+    """Bits per held-out trial gained over the baseline, for models trained on each source and tested on each block type.
+
+    The players are split into two halves: train on one half, test on the other, then swap and
+    average - so every test set comes from players the model has never seen.
+    """
+    players = np.array(sorted(data["participant"].unique()))
+    rng = np.random.default_rng(seed)
+    rng.shuffle(players)
+    halves = [set(players[: len(players) // 2]), set(players[len(players) // 2:])]
     table = {}
-    for train in train_blocks:
-        model = fit_model(data[data["block"] == train])
-        table[train] = {test: (np.nan if test == train else round(1000 * information_gain(model, data[data["block"] == test]), 1))
-                        for test in test_blocks}
-    return pd.DataFrame(table).T.rename_axis(index="trained on", columns="tested on (millibits per trial)")
+    for source, (block, remove) in TRAINING_SOURCES.items():
+        gains = {test: [] for test in test_blocks}
+        for train_half, test_half in [(halves[0], halves[1]), (halves[1], halves[0])]:
+            train = data[data["participant"].isin(train_half) & (data["block"] == block)]
+            model = fit_model(train, exclude_ink_repetitions=remove)
+            for test in test_blocks:
+                held_out = data[data["participant"].isin(test_half) & (data["block"] == test)]
+                gains[test].append(information_gain(model, held_out))
+        table[source] = {test: round(float(np.mean(g)), 3) for test, g in gains.items()}
+    table = pd.DataFrame(table).T.rename(columns={"designed": "predefined"})
+    return table.rename_axis(index="trained on", columns="tested on (bits per trial)")
 
 
 def example_three_blocks(designed_pool: pd.DataFrame, n_players: int = 24, seed: int = 0) -> pd.DataFrame:
