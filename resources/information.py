@@ -7,6 +7,10 @@ All measures are in bits (log base 2):
   mutual information    I(X;Y) = H(Y) − H(Y|X) = H(X) + H(Y) − H(X,Y)
 X and Y are independent exactly when I(X;Y) = 0.
 
+The storyline of the session: X = a player's Stroop effect (what we want to know), Y = a response
+time (what we observe), and our choice = the condition of the next trial. The design checks
+(independence of factors, predictability) apply the same measures to the design itself.
+
 Models as measuring instruments: a linear regression with the structure of the simulated Stroop
 player is fitted on one block type and scored on held-out blocks as the information gain per trial
 over a baseline that only knows each player's mean response time.
@@ -15,7 +19,6 @@ over a baseline that only knows each player's mean response time.
 import numpy as np
 import pandas as pd
 
-from resources.stroop_analysis import clean_trials
 
 # English letter frequencies in % (Lewand, 2000)
 LETTER_FREQUENCIES = {
@@ -60,19 +63,22 @@ def letters(trials: pd.DataFrame) -> np.ndarray:
 
 
 def design_factors(trials: pd.DataFrame) -> pd.DataFrame:
-    """Factors of every trial (from the second one on): congruency, previous congruency, block half, ink repetition."""
+    """Factors of every trial (from the third one on): congruency, previous and two-back congruency, ink repetition."""
     c = letters(trials)
     ink = trials["ink"].to_numpy()
-    half = np.where(np.arange(len(c)) < len(c) // 2, "first", "second")
-    return pd.DataFrame({"congruency": c[1:], "previous": c[:-1], "half": half[1:],
-                         "ink repetition": np.where(ink[1:] == ink[:-1], "repeat", "switch")})
+    return pd.DataFrame({"congruency": c[2:], "previous": c[1:-1], "two back": c[:-2],
+                         "ink repetition": np.where(ink[2:] == ink[1:-1], "repeat", "switch")})
 
 
-def design_independence(trials: pd.DataFrame) -> pd.Series:
-    """Mutual information (bits) between congruency and the other factors of a design: 0 = independent."""
-    f = design_factors(trials)
+def design_independence(trials) -> pd.Series:
+    """Mutual information (bits) between congruency and the other factors of a design: 0 = independent.
+
+    `trials` is one sequence or a list of sequences of the same design (pooled).
+    """
+    seqs = [trials] if isinstance(trials, pd.DataFrame) else list(trials)
+    f = pd.concat([design_factors(t) for t in seqs], ignore_index=True)
     return pd.Series({f"I(congruency; {other})": round(mutual_information(f["congruency"], f[other]), 3)
-                      for other in ["previous", "half", "ink repetition"]})
+                      for other in ["previous", "two back", "ink repetition"]})
 
 
 def predictability(trials, max_history: int = 4) -> pd.Series:
@@ -96,35 +102,54 @@ def predictability(trials, max_history: int = 4) -> pd.Series:
     return pd.Series(out, name="H(next | last k) in bits")
 
 
-# ------------------------------------------------------------------ responses
+# ------------------------------------------------------------------ responses: bits about the Stroop effect
 
-def rt_information(data: pd.DataFrame, n_bins: int = 4) -> pd.Series:
-    """How many bits the factors tell about the response time (RT split into n_bins quantiles per player)."""
-    clean = clean_trials(data).dropna(subset=["prev_congruency"]).copy()
-    clean["rt bin"] = clean.groupby("participant")["rt_ms"].transform(
-        lambda rt: pd.qcut(rt, n_bins, labels=False, duplicates="drop"))
-    out = {"H(RT bin)": entropy(clean["rt bin"].value_counts()),
-           "I(congruency; RT bin)": mutual_information(clean["congruency"], clean["rt bin"])}
-    # sequence effect: what the previous trial adds once the current one is known
-    parts = [mutual_information(d["prev_congruency"], d["rt bin"]) * len(d) / len(clean)
-             for _, d in clean.groupby("congruency")]
-    out["I(previous; RT bin | congruency)"] = sum(parts)
-    return pd.Series(out).round(4)
+NORMAL_ENTROPY = 0.5 * np.log2(2 * np.pi * np.e)   # H of a normal distribution = log2(SD) + this, in bits
 
 
-def rt_bin_table(data: pd.DataFrame, n_bins: int = 4) -> pd.DataFrame:
-    """Share of each response-time bin (quantiles per player) within congruent and incongruent trials, and its entropy.
+def bits_gained(sd_before: float, se: float) -> dict:
+    """What a measurement with standard error `se` tells about an effect we knew up to `sd_before`.
 
-    H(RT bin | congruency) is the average of the two entropies, weighted by how often each congruency occurs.
+    Before and after are normal distributions; their precisions (1 / SD²) add:
+        SD after = 1 / √(1 / SD²before + 1 / SE²)
+        bits     = log2(SD before / SD after)   (halving the SD = 1 bit)
     """
-    clean = clean_trials(data).dropna(subset=["prev_congruency"]).copy()
-    clean["rt bin"] = clean.groupby("participant")["rt_ms"].transform(
-        lambda rt: pd.qcut(rt, n_bins, labels=False, duplicates="drop"))
-    table = pd.crosstab(clean["congruency"], clean["rt bin"], normalize="index")
-    table.columns = ["fastest quarter", "2nd quarter", "3rd quarter", "slowest quarter"][:n_bins]
-    table["H (bits)"] = [entropy(row) for row in table.to_numpy()]
-    table["share of trials"] = clean["congruency"].value_counts(normalize=True)
-    return table.round(3)
+    sd_after = 1 / np.sqrt(1 / sd_before ** 2 + 1 / se ** 2)
+    return {"SD before (ms)": sd_before, "SE of the data (ms)": se, "SD after (ms)": sd_after,
+            "bits": float(np.log2(sd_before / sd_after))}
+
+
+def stroop_trial_information(n_trials: int = 400, sigma: float = 200.0, sd_effect: float = 50.0,
+                             sd_base: float = 100.0, resolution: float = 10.0) -> pd.DataFrame:
+    """Trial by trial: X = a player's Stroop effect, Y = the response time of the next trial.
+
+    Model: RT = base speed + X · incongruent + noise (SD `sigma`). Before the first trial, the base
+    speed is known up to `sd_base` and the Stroop effect up to `sd_effect` (normal distributions).
+    Every trial is the condition (congruent or incongruent) whose RT tells the most about X.
+    Entropies of continuous quantities need a resolution (here `resolution` ms); differences in
+    entropy (bits gained) do not depend on it. In this normal model the numbers do not depend on
+    the response times actually observed, so they are exact, not averages.
+
+    Returns one row per trial, *before* that trial: H(X), H(Y), I(X;Y), H(Y|X), the chosen condition
+    and the trials run so far in each condition.
+    """
+    cov = np.diag([sd_base ** 2, sd_effect ** 2])          # uncertainty about (base speed, Stroop effect)
+    rows, counts = [], {"congruent": 0, "incongruent": 0}
+    for trial in range(1, n_trials + 1):
+        options = []
+        for cell, a in (("congruent", np.array([1.0, 0.0])), ("incongruent", np.array([1.0, 1.0]))):
+            var_y = a @ cov @ a + sigma ** 2                 # how uncertain the next RT is
+            var_x_after = cov[1, 1] - (cov @ a)[1] ** 2 / var_y
+            options.append((0.5 * np.log2(cov[1, 1] / var_x_after), cell, a, var_y))
+        info, cell, a, var_y = max(options, key=lambda o: o[0])
+        h_x = NORMAL_ENTROPY + np.log2(np.sqrt(cov[1, 1]) / resolution)
+        h_y = NORMAL_ENTROPY + np.log2(np.sqrt(var_y) / resolution)
+        rows.append({"trial": trial, "H(X)": h_x, "H(Y)": h_y, "I(X;Y)": info, "H(Y|X)": h_y - info,
+                     "SD of X (ms)": np.sqrt(cov[1, 1]), "next condition": cell,
+                     "congruent so far": counts["congruent"], "incongruent so far": counts["incongruent"]})
+        cov = cov - np.outer(cov @ a, cov @ a) / var_y
+        counts[cell] += 1
+    return pd.DataFrame(rows).set_index("trial")
 
 
 # ------------------------------------------------------------------ models as measuring instruments
