@@ -176,6 +176,47 @@ def plot_iteration(gp: GroupGP, candidates: pd.DataFrame, gain_choice, gain_rt, 
     return fig
 
 
+def _density(x, lo, hi, grid):
+    """Kernel density of x on [lo, hi], reflected at both edges so it does not drop off at the bounds."""
+    from scipy.stats import gaussian_kde
+    x = np.asarray(x, float)
+    if len(x) < 2 or np.ptp(x) == 0:
+        return np.zeros_like(grid)
+    kde = gaussian_kde(x)
+    return kde(grid) + kde(2 * lo - grid) + kde(2 * hi - grid)
+
+
+def plot_placement(blocks: dict, ranges=(RATIO_RANGE, (0.0, 1.0))):
+    """Where the trials went: one scatter plot per block, with the density of the trials along
+    ratio (band on top) and along scatteredness (band on the right)."""
+    fig = plt.figure(figsize=(5.8 * len(blocks), 4.6))
+    subfigs = np.atleast_1d(fig.subfigures(1, len(blocks)))
+    (r_lo, r_hi), (s_lo, s_hi) = ranges
+    r_grid, s_grid = np.linspace(r_lo, r_hi, 200), np.linspace(s_lo, s_hi, 200)
+    dens = {name: (_density(d["ratio"], r_lo, r_hi, r_grid), _density(d["scatteredness"], s_lo, s_hi, s_grid))
+            for name, d in blocks.items()}
+    r_max = 1.05 * max(r.max() for r, _ in dens.values())      # one scale for all panels, so they compare
+    s_max = 1.05 * max(s.max() for _, s in dens.values())
+    for sub, (name, d) in zip(subfigs, blocks.items()):
+        gs = sub.add_gridspec(2, 2, width_ratios=(5, 1), height_ratios=(1, 5), wspace=0.05, hspace=0.05)
+        ax = sub.add_subplot(gs[1, 0])
+        top = sub.add_subplot(gs[0, 0], sharex=ax)
+        right = sub.add_subplot(gs[1, 1], sharey=ax)
+        ax.scatter(d["ratio"], d["scatteredness"], s=12, alpha=0.6, color="#2f7bbf", clip_on=False)
+        top.fill_between(r_grid, dens[name][0], color="#2f7bbf", alpha=0.4)
+        right.fill_betweenx(s_grid, dens[name][1], color="#2f7bbf", alpha=0.4)
+        ax.set_xlim(r_lo, r_hi)
+        ax.set_ylim(s_lo, s_hi)
+        ax.set_xlabel("ratio")
+        ax.set_ylabel("scatteredness")
+        top.set_title(f"{name}: where the {len(d)} trials went", fontsize=10)
+        for band in (top, right):
+            band.axis("off")
+        top.set_ylim(0, r_max)
+        right.set_xlim(0, s_max)
+    return fig
+
+
 def plot_curves(gp: GroupGP, data: Optional[pd.DataFrame] = None):
     """The theorist's predictions: P(blue) and the typical RT along ratio, at scatteredness 0 and 1."""
     grid = np.linspace(*RATIO_RANGE, 100)
